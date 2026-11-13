@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Home Dashboard - Central Control</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MQTT.js CDN -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans p-6">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
+            <div>
+                <h1 class="text-2xl font-bold">🏠 ĐIỀU KHIỂN NHÀ THÔNG MINH</h1>
+                <p class="text-sm text-gray-400">Trạng thái hệ thống trung tâm</p>
+            </div>
+            <div id="connection-status" class="px-3 py-1 rounded text-sm bg-red-600 text-white font-medium">
+                Đang kết nối MQTT...
+            </div>
+        </header>
+
+        <!-- Tabs Tầng -->
+        <div class="mb-6 flex gap-4">
+            <button onclick="switchFloor('floor1')" id="btn-f1" class="px-6 py-2 rounded-lg bg-blue-600 font-bold shadow-lg transition">TẦNG 1</button>
+            <button onclick="switchFloor('floor2')" id="btn-f2" class="px-6 py-2 rounded-lg bg-gray-700 font-bold shadow-lg transition">TẦNG 2</button>
+        </div>
+
+        <!-- TẦNG 1 CONTAINER -->
+        <div id="floor1-view" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Phòng Khách Card -->
+            <div class="bg-sky-100 text-gray-900 p-5 rounded-2xl border-2 border-sky-400 shadow-xl flex flex-col justify-between h-52">
+                <div class="flex justify-between items-start">
+                    <h3 class="font-bold text-lg">PHÒNG KHÁCH</h3>
+                    <span class="text-xs px-2 py-1 bg-sky-200 rounded text-sky-800 font-semibold">Online</span>
+                </div>
+                <div>
+                    <div id="lk-temp" class="text-4xl font-extrabold text-sky-700">27°C</div>
+                    <div class="text-xs text-gray-600 mt-1">Điều hòa: Đang bật</div>
+                </div>
+                <div class="flex justify-between items-center border-t border-sky-300 pt-3">
+                    <span class="text-sm font-medium">Trạng thái công tắc</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="sw-lk" onchange="toggleDevice('livingroom', this.checked)" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Các thẻ phòng khác có thể bổ sung tương tự ở đây -->
+        </div>
+
+        <!-- TẦNG 2 CONTAINER (Ẩn mặc định) -->
+        <div id="floor2-view" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden">
+            <div class="bg-pink-100 text-gray-900 p-5 rounded-2xl border-2 border-pink-400 shadow-xl flex flex-col justify-between h-52">
+                <h3 class="font-bold text-lg">PHÒNG NGỦ MASTER</h3>
+                <div class="text-4xl font-extrabold text-pink-700">24°C</div>
+                <div class="flex justify-between items-center border-t border-pink-300 pt-3">
+                    <span class="text-sm font-medium">Đèn ngủ / Điều hòa</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="sw-master" onchange="toggleDevice('master', this.checked)" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-pink-600"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH MQTT BROKER (Dùng chung với hệ thống HMI) ---
+        // Lưu ý: Kết nối WebSockets từ trình duyệt thường dùng cổng wss:// (nếu có TLS) hoặc ws://
+        const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+
+        mqttClient.on('connect', function () {
+            document.getElementById('connection-status').innerText = 'Đã kết nối MQTT';
+            document.getElementById('connection-status').className = 'px-3 py-1 rounded text-sm bg-green-600 text-white font-medium';
+            
+            // Subscribe các topic cảm biến
+            mqttClient.subscribe('home/floor1/livingroom/sensor');
+        });
+
+        mqttClient.on('error', function (err) {
+            console.log('MQTT error: ', err);
+            document.getElementById('connection-status').innerText = 'Lỗi kết nối';
+        });
+
+        // Nhận dữ liệu cập nhật từ các Node ESP32 / HMI
+        mqttClient.on('message', function (topic, payload) {
+            if (topic === 'home/floor1/livingroom/sensor') {
+                document.getElementById('lk-temp').innerText = payload.toString() + '°C';
+            }
+        });
+
+        // Gửi lệnh điều khiển khi bấm gạt công tắc trên web
+        function toggleDevice(room, state) {
+            let topic = `home/floor1/${room}/relay/set`;
+            let message = state ? 'ON' : 'OFF';
+            mqttClient.publish(topic, message);
+            console.log(`Đã gửi lệnh [${message}] tới [${topic}]`);
+        }
+
+        // Chuyển tab Tầng 1 / Tầng 2
+        function switchFloor(floor) {
+            if(floor === 'floor1') {
+                document.getElementById('floor1-view').classList.remove('hidden');
+                document.getElementById('floor2-view').classList.add('hidden');
+                document.getElementById('btn-f1').className = 'px-6 py-2 rounded-lg bg-blue-600 font-bold shadow-lg transition';
+                document.getElementById('btn-f2').className = 'px-6 py-2 rounded-lg bg-gray-700 font-bold shadow-lg transition';
+            } else {
+                document.getElementById('floor1-view').classList.add('hidden');
+                document.getElementById('floor2-view').classList.remove('hidden');
+                document.getElementById('btn-f2').className = 'px-6 py-2 rounded-lg bg-blue-600 font-bold shadow-lg transition';
+                document.getElementById('btn-f1').className = 'px-6 py-2 rounded-lg bg-gray-700 font-bold shadow-lg transition';
+            }
+        }
+    </script>
+</body>
+</html>
