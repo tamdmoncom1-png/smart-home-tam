@@ -49,8 +49,6 @@
                     </label>
                 </div>
             </div>
-
-            <!-- Các thẻ phòng khác có thể bổ sung tương tự ở đây -->
         </div>
 
         <!-- TẦNG 2 CONTAINER (Ẩn mặc định) -->
@@ -70,16 +68,16 @@
     </div>
 
     <script>
-        // --- CẤU HÌNH MQTT BROKER (Dùng chung với hệ thống HMI) ---
-        // Lưu ý: Kết nối WebSockets từ trình duyệt thường dùng cổng wss:// (nếu có TLS) hoặc ws://
+        // Kết nối MQTT qua WebSocket tới Broker chung
         const mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
         mqttClient.on('connect', function () {
             document.getElementById('connection-status').innerText = 'Đã kết nối MQTT';
             document.getElementById('connection-status').className = 'px-3 py-1 rounded text-sm bg-green-600 text-white font-medium';
             
-            // Subscribe các topic cảm biến
+            // Subscribe cả cảm biến và trạng thái công tắc
             mqttClient.subscribe('home/floor1/livingroom/sensor');
+            mqttClient.subscribe('home/floor1/livingroom/relay/state');
         });
 
         mqttClient.on('error', function (err) {
@@ -87,19 +85,31 @@
             document.getElementById('connection-status').innerText = 'Lỗi kết nối';
         });
 
-        // Nhận dữ liệu cập nhật từ các Node ESP32 / HMI
+        // Lắng nghe dữ liệu phản hồi từ MQTT Broker
         mqttClient.on('message', function (topic, payload) {
+            let message = payload.toString();
+            
             if (topic === 'home/floor1/livingroom/sensor') {
-                document.getElementById('lk-temp').innerText = payload.toString() + '°C';
+                document.getElementById('lk-temp').innerText = message + '°C';
+            }
+            
+            // Đồng bộ gạt công tắc khi màn hình 7 inch thao tác
+            if (topic === 'home/floor1/livingroom/relay/state') {
+                let sw = document.getElementById('sw-lk');
+                if (message === 'ON') {
+                    sw.checked = true;
+                } else {
+                    sw.checked = false;
+                }
             }
         });
 
-        // Gửi lệnh điều khiển khi bấm gạt công tắc trên web
+        // Gửi lệnh khi bấm gạt trên Web Dashboard
         function toggleDevice(room, state) {
-            let topic = `home/floor1/${room}/relay/set`;
+            let topic = `home/floor1/${room}/relay/state`;
             let message = state ? 'ON' : 'OFF';
             mqttClient.publish(topic, message);
-            console.log(`Đã gửi lệnh [${message}] tới [${topic}]`);
+            console.log(`Web gửi lệnh [${message}] tới [${topic}]`);
         }
 
         // Chuyển tab Tầng 1 / Tầng 2
